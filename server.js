@@ -1,3 +1,9 @@
+
+const mongoose = require('mongoose');
+mongoose.connect('mongodb+srv://tomquinnmathtutor_db_user:PSW35MayAve@cluster0.8xouaex.mongodb.net/tutoring?retryWrites=true&w=majority')
+  .then(() => console.log('MongoDB connected'))
+  .catch(err => console.error(err));
+
 const express = require('express');
 const fetch = require('node-fetch');
 const app = express();
@@ -12,12 +18,30 @@ app.get('/', (req, res) => {
 });
 
 // get sessions
-app.get('/sessions/:userId', (req, res) => {
+
+app.get('/sessions/:userId', async (req, res) => {
   const { userId } = req.params;
 
-  res.json({
-    sessions: sessionsDB[userId] || 0
-  });
+  console.log('--- ROUTE HIT ---');
+  console.log('User ID:', userId);
+
+  try {
+    let session = await Session.findOne({ userId });
+    console.log('Found session:', session);
+
+    if (!session) {
+      console.log('Creating new session...');
+      session = new Session({ userId, sessionsRemaining: 0 });
+      await session.save();
+      console.log('Saved to MongoDB');
+    }
+
+    res.json({ sessions: session.sessionsRemaining });
+
+  } catch (err) {
+    console.error('ERROR:', err);
+    res.status(500).json({ error: 'Server error' });
+  }
 });
 
 // verify payment (we’ll improve this later)
