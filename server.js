@@ -11,6 +11,7 @@ const app = express();
 app.use(express.json());
 
 const sessionsDB = {};
+const Session = require('./models/Session');
 
 // test route
 app.get('/', (req, res) => {
