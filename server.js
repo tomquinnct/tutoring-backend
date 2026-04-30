@@ -5,7 +5,8 @@ const cors = require('cors');
 app.use(cors({
   origin: [
     "https://quinnmathtutor.com",
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "http://127.0.0.1:5500"
   ],
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"]
@@ -53,31 +54,29 @@ app.get('/sessions/:userId', async (req, res) => {
 });
 
 // verify payment
-app.post('/verify-payment', async (req, res) => {
-  const { tx, userId } = req.body;
-
-  if (!tx || !userId) {
-    return res.status(400).json({ success: false });
-  }
-
+app.post("/verify-payment", async (req, res) => {
   try {
-    let session = await Session.findOne({ userId });
+    const { tx, userId, packageName } = req.body;
 
-    if (!session) {
-      session = new Session({ userId, sessionsRemaining: 0 });
-    }
+    console.log("VERIFY PAYMENT HIT:", req.body);
 
-    session.sessionsRemaining += 5;
-    await session.save();
+    // Example logic (adjust to your DB)
+    let sessionsToAdd = 0;
 
-    res.json({
+    if (packageName.includes("10")) sessionsToAdd = 10;
+    if (packageName.includes("2")) sessionsToAdd = 2;
+
+    // TODO: update your database here
+    // await db.users.update(...)
+
+    return res.json({
       success: true,
-      sessions: session.sessionsRemaining
+      sessions: sessionsToAdd
     });
 
   } catch (err) {
-    console.error('Verification error:', err);
-    res.status(500).json({ success: false });
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
   }
 });
 
