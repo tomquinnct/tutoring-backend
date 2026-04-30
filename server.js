@@ -14,12 +14,18 @@ app.use(cors({
   allowedHeaders: ["Content-Type"]
 }));
 
-app.use(cors());
+// app.use(cors());
+
+
 
 // MongoDB connection
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.error(err));
+const SessionSchema = new mongoose.Schema({
+  userId: { type: String, required: true, unique: true },
+  sessionsRemaining: { type: Number, default: 0 }
+});
+
+module.exports = mongoose.model("Session", SessionSchema);
+
 
 // Model
 const Session = require('./models/Session');
@@ -31,53 +37,70 @@ app.get('/', (req, res) => {
 
 // get sessions
 app.get('/sessions/:userId', async (req, res) => {
-  const { userId } = req.params;
-
-  console.log('--- ROUTE HIT ---');
-  console.log('User ID:', userId);
-
   try {
+    const { userId } = req.params;
+
     let session = await Session.findOne({ userId });
 
     if (!session) {
-      session = new Session({ userId, sessionsRemaining: 0 });
-      await session.save();
+      session = await Session.create({
+        userId,
+        sessionsRemaining: 0
+      });
     }
 
     res.json({ sessions: session.sessionsRemaining });
 
   } catch (err) {
-    console.error('ERROR:', err);
-    res.status(500).json({ error: 'Server error' });
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
 });
 
 // verify payment
+
+const axios = require("axios");
+
 app.post("/verify-payment", async (req, res) => {
   try {
     const { tx, userId, packageName } = req.body;
 
     console.log("VERIFY PAYMENT HIT:", req.body);
 
-    // Example logic (adjust to your DB)
-    let sessionsToAdd = 0;
+    // ⚠️ MVP MODE: trust PayPal redirect for now
+    // (we will upgrade to full API verification later)
 
-    if (packageName.includes("10")) sessionsToAdd = 10;
-    if (packageName.includes("2")) sessionsToAdd = 2;
+    let sessionsToAdd =
+      packageName.includes("20") ? 20 :
+      packageName.includes("10") ? 10 :
+      packageName.includes("2") ? 2 : 0;
 
-    // TODO: update your database here
-    // await db.users.update(...)
+    let user = await Session.findOne({ userId });
+
+    if (!user) {
+      user = new Session({
+        userId,
+        sessionsRemaining: sessionsToAdd
+      });
+    } else {
+      user.sessionsRemaining += sessionsToAdd;
+    }
+
+    await user.save();
 
     return res.json({
       success: true,
-      sessions: sessionsToAdd
+      sessions: user.sessionsRemaining
     });
 
   } catch (err) {
-    console.error(err);
+    console.error("VERIFY ERROR:", err);
     return res.status(500).json({ error: "Server error" });
   }
 });
+
+
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
