@@ -1,8 +1,35 @@
-const mongoose = require('mongoose');
+ // =======================
+// IMPORTS
+// =======================
 const express = require('express');
+const mongoose = require('mongoose');
 const cors = require('cors');
+const crypto = require('crypto');
+const session = require('express-session');
+const axios = require('axios');
+
+const Session = require('./models/Session');
+
 const app = express();
+
+const { client } = require('./paypalClient');
+const checkoutNodeJssdk = require('@paypal/checkout-server-sdk');
+
+async function verifyPayPalOrder(orderId) {
+
+  const request = new checkoutNodeJssdk.orders.OrdersGetRequest(orderId);
+
+  const response = await client().execute(request);
+
+  return response.result;
+}
+
+
+// =======================
+// MIDDLEWARE
+// =======================
 app.use(express.json());
+app.set('trust proxy', 1);
 
 app.use(cors({
   origin: [
@@ -10,46 +37,59 @@ app.use(cors({
     "http://localhost:3000",
     "http://127.0.0.1:5500"
   ],
+  credentials: true,
   methods: ["GET", "POST", "OPTIONS"],
   allowedHeaders: ["Content-Type"]
 }));
 
-// app.use(cors());
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: 1000 * 60 * 60 * 24 * 30
+  }
+}));
 
+// =======================
+// ROUTES
+// =======================
 
-
-// MongoDB connection
-const SessionSchema = new mongoose.Schema({
-  userId: { type: String, required: true, unique: true },
-  sessionsRemaining: { type: Number, default: 0 }
-});
-
-module.exports = mongoose.model("Session", SessionSchema);
-
-
-// Model
-const Session = require('./models/Session');
-
-// test route
 app.get('/', (req, res) => {
   res.send('Server is running');
 });
 
-// get sessions
-app.get('/sessions/:userId', async (req, res) => {
+// SESSION BOOTSTRAP
+app.get('/api/session', (req, res) => {
+  if (!req.session.userId) {
+    req.session.userId = crypto.randomUUID();
+  }
+  res.json({ success: true });
+});
+
+// GET SESSIONS (SECURE)
+app.get('/sessions', async (req, res) => {
   try {
-    const { userId } = req.params;
 
-    let session = await Session.findOne({ userId });
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
-    if (!session) {
-      session = await Session.create({
+    const userId = req.session.userId;
+
+    let record = await Session.findOne({ userId });
+
+    if (!record) {
+      record = await Session.create({
         userId,
         sessionsRemaining: 0
       });
     }
 
-    res.json({ sessions: session.sessionsRemaining });
+    res.json({ sessions: record.sessionsRemaining });
 
   } catch (err) {
     console.error(err);
@@ -57,18 +97,76 @@ app.get('/sessions/:userId', async (req, res) => {
   }
 });
 
-// verify payment
+// VERIFY PAYMENT (PayPal MVP)
 
-const axios = require("axios");
+app.post('/paypal-webhook', async (req, res) => {
+
+  try {
+
+    const event = req.body;
+
+    console.log("Webhook received:", event.event_type);
+
+    if (event.event_type !== "CHECKOUT.ORDER.APPROVED") {
+      return res.sendStatus(200);
+    }
+
+    const orderId = event.resource.id;
+
+    // STEP 1: verify with PayPal API
+    const order = await verifyPayPalOrder(orderId);
+
+    // STEP 2: extract metadata
+    const userId = order.purchase_units?.[0]?.custom_id;
+    const amount = order.purchase_units?.[0]?.amount?.value;
+
+    if (!userId) return res.sendStatus(200);
+
+    // STEP 3: compute sessions safely
+    let sessionsToAdd = 0;
+
+    if (amount === "2.00") sessionsToAdd = 1;
+    if (amount === "75.00") sessionsToAdd = 2;
+    if (amount === "350.00") sessionsToAdd = 10;
+    if (amount === "650.00") sessionsToAdd = 20;
+
+    // STEP 4: update DB
+    let user = await Session.findOne({ userId });
+
+    if (!user) {
+      user = new Session({
+        userId,
+        sessionsRemaining: sessionsToAdd
+      });
+    } else {
+      user.sessionsRemaining += sessionsToAdd;
+    }
+
+    await user.save();
+
+    console.log("Sessions credited:", userId);
+
+    res.sendStatus(200);
+
+  } catch (err) {
+
+    console.error("Webhook error:", err);
+    res.sendStatus(500);
+  }
+});
+
 
 app.post("/verify-payment", async (req, res) => {
+
   try {
-    const { tx, userId, packageName } = req.body;
 
-    console.log("VERIFY PAYMENT HIT:", req.body);
+    const { tx, packageName } = req.body;
 
-    // ⚠️ MVP MODE: trust PayPal redirect for now
-    // (we will upgrade to full API verification later)
+    const userId = req.session.userId;
+
+    if (!userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
 
     let sessionsToAdd =
       packageName.includes("20") ? 20 :
@@ -99,8 +197,9 @@ app.post("/verify-payment", async (req, res) => {
   }
 });
 
-
-
+// =======================
+// START SERVER
+// =======================
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
