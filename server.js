@@ -1,5 +1,17 @@
 const mongoose = require('mongoose');
 const express = require('express');
+const cors = require('cors');
+
+app.use(cors({
+  origin: [
+    "https://quinnmathtutor.com",
+    "http://localhost:3000"
+  ],
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
+
+app.options("*", cors());
 
 const app = express();
 app.use(express.json());
