@@ -7,7 +7,7 @@ const cors = require('cors');
 const crypto = require('crypto');
 const session = require('express-session');
 const axios = require('axios');
-
+const Payment = require('./models/Payment');
 const Session = require('./models/Session');
 
 const app = express();
@@ -97,105 +97,178 @@ app.get('/sessions', async (req, res) => {
   }
 });
 
-// VERIFY PAYMENT (PayPal MVP)
 
-app.post('/paypal-webhook', async (req, res) => {
+// =======================
+// CREATE PACHAGES 
+// =======================
 
-  try {
-
-    const event = req.body;
-
-    console.log("Webhook received:", event.event_type);
-
-    if (event.event_type !== "CHECKOUT.ORDER.APPROVED") {
-      return res.sendStatus(200);
-    }
-
-    const orderId = event.resource.id;
-
-    // STEP 1: verify with PayPal API
-    const order = await verifyPayPalOrder(orderId);
-
-    // STEP 2: extract metadata
-    const userId = order.purchase_units?.[0]?.custom_id;
-    const amount = order.purchase_units?.[0]?.amount?.value;
-
-    if (!userId) return res.sendStatus(200);
-
-    // STEP 3: compute sessions safely
-    let sessionsToAdd = 0;
-
-    if (amount === "2.00") sessionsToAdd = 2;
-    if (amount === "75.00") sessionsToAdd = 2;
-    if (amount === "350.00") sessionsToAdd = 10;
-    if (amount === "650.00") sessionsToAdd = 20;
-
-    // STEP 4: update DB
-    let user = await Session.findOne({ userId });
-
-    if (!user) {
-      user = new Session({
-        userId,
-        sessionsRemaining: sessionsToAdd
-      });
-    } else {
-      user.sessionsRemaining += sessionsToAdd;
-    }
-
-    await user.save();
-
-    console.log("Sessions credited:", userId);
-
-    res.sendStatus(200);
-
-  } catch (err) {
-
-    console.error("Webhook error:", err);
-    res.sendStatus(500);
+const PACKAGES = {
+  test: {
+    name: "2 Half Hour TEST Session",
+    amount: "2.00",
+    sessions: 2
+  },
+  two: {
+    name: "2 Half Hour Sessions",
+    amount: "75.00",
+    sessions: 2
+  },
+  ten: {
+    name: "10 Half Hour Sessions",
+    amount: "350.00",
+    sessions: 10
+  },
+  twenty: {
+    name: "20 Half Hour Sessions",
+    amount: "650.00",
+    sessions: 20
   }
-});
+};
 
 
-app.post("/verify-payment", async (req, res) => {
+// =======================
+// CREATE ORDER 
+// =======================
 
+app.post('/api/paypal/create-order', async (req, res) => {
   try {
-
-    const { tx, packageName } = req.body;
-
-    const userId = req.session.userId;
-
-    if (!userId) {
+    if (!req.session.userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    let sessionsToAdd =
-      packageName.includes("20") ? 20 :
-      packageName.includes("10") ? 10 :
-      packageName.includes("2") ? 2 : 0;
+    const { packageId } = req.body;
+    const selectedPackage = PACKAGES[packageId];
 
-    let user = await Session.findOne({ userId });
-
-    if (!user) {
-      user = new Session({
-        userId,
-        sessionsRemaining: sessionsToAdd
-      });
-    } else {
-      user.sessionsRemaining += sessionsToAdd;
+    if (!selectedPackage) {
+      return res.status(400).json({ error: "Invalid package" });
     }
 
-    await user.save();
+    const request = new checkoutNodeJssdk.orders.OrdersCreateRequest();
 
-    return res.json({
+    request.prefer("return=representation");
+
+    request.requestBody({
+      intent: "CAPTURE",
+      purchase_units: [
+        {
+          custom_id: req.session.userId,
+          description: selectedPackage.name,
+          amount: {
+            currency_code: "USD",
+            value: selectedPackage.amount
+          }
+        }
+      ]
+    });
+
+    const order = await client().execute(request);
+
+    res.json({ orderId: order.result.id });
+
+  } catch (err) {
+    console.error("CREATE ORDER ERROR:", err);
+    res.status(500).json({ error: "Could not create PayPal order" });
+  }
+});
+
+
+// =======================
+// CAPTURE ORDER 
+// =======================
+
+app.post('/api/paypal/capture-order', async (req, res) => {
+  try {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const { orderId } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ error: "Missing orderId" });
+    }
+
+    const request = new checkoutNodeJssdk.orders.OrdersCaptureRequest(orderId);
+    request.requestBody({});
+
+    const capture = await client().execute(request);
+    const result = capture.result;
+
+    if (result.status !== "COMPLETED") {
+      return res.status(400).json({ error: "Payment not completed" });
+    }
+
+    const purchaseUnit = result.purchase_units?.[0];
+    const capturedPayment = purchaseUnit?.payments?.captures?.[0];
+
+    const userId = purchaseUnit?.custom_id;
+    const amount = capturedPayment?.amount?.value;
+    const captureId = capturedPayment?.id;
+
+    const existingPayment = await Payment.findOne({
+  $or: [
+    { paypalOrderId: orderId },
+    { paypalCaptureId: captureId }
+  ]
+});
+
+if (existingPayment) {
+  const existingUser = await Session.findOne({ userId });
+
+  return res.json({
+    success: true,
+    duplicate: true,
+    sessions: existingUser ? existingUser.sessionsRemaining : 0,
+    message: "Payment was already processed."
+  });
+}
+
+
+    if (!userId || userId !== req.session.userId) {
+      return res.status(400).json({ error: "User mismatch" });
+    }
+
+    let sessionsToAdd = 0;
+
+    for (const pkg of Object.values(PACKAGES)) {
+      if (pkg.amount === amount) {
+        sessionsToAdd = pkg.sessions;
+        break;
+      }
+    }
+
+    if (!sessionsToAdd) {
+      return res.status(400).json({ error: "Invalid payment amount" });
+    }
+
+     await Payment.create({
+       userId,
+       paypalOrderId: orderId,
+       paypalCaptureId: captureId,
+       amount,
+       sessionsAdded: sessionsToAdd,
+       status: result.status
+     });
+
+     const updatedUser = await Session.findOneAndUpdate(
+       { userId },
+       { $inc: { sessionsRemaining: sessionsToAdd } },
+       { upsert: true, new: true }
+     );
+     
+    res.json({
       success: true,
-      sessions: user.sessionsRemaining
+      sessions: updatedUser.sessionsRemaining,
+      captureId
     });
 
   } catch (err) {
-    console.error("VERIFY ERROR:", err);
-    return res.status(500).json({ error: "Server error" });
+    console.error("CAPTURE ORDER ERROR:", err);
+    res.status(500).json({ error: "Could not capture PayPal order" });
   }
 });
+
+
 
 // =======================
 // START SERVER
