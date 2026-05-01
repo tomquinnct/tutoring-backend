@@ -125,7 +125,7 @@ app.post('/paypal-webhook', async (req, res) => {
     // STEP 3: compute sessions safely
     let sessionsToAdd = 0;
 
-    if (amount === "2.00") sessionsToAdd = 1;
+    if (amount === "2.00") sessionsToAdd = 2;
     if (amount === "75.00") sessionsToAdd = 2;
     if (amount === "350.00") sessionsToAdd = 10;
     if (amount === "650.00") sessionsToAdd = 20;
