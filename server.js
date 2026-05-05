@@ -2,6 +2,11 @@
 // IMPORTS
 // =======================
 
+
+console.log("🔥 SERVER FILE IS RUNNING");
+console.log("ENV TEST:", process.env.MONGODB_URI);
+
+
 require("dotenv").config(); // 👈 MUST be first
 
 const express = require('express');
