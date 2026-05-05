@@ -15,11 +15,6 @@ const Session = require('./models/Session');
 
 const app = express();
 
-// ===========================================
-console.log("client type:", typeof client);
-console.log("client():", client?.());
-// ===========================================
-
 const { client } = require('./paypalClient');
 
 const checkoutNodeJssdk = require('@paypal/checkout-server-sdk');
