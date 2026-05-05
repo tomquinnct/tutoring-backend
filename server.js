@@ -66,6 +66,30 @@ app.get('/', (req, res) => {
   res.send('Server is running');
 });
 
+// =======================
+// DB TEST ROUTE 
+// =======================
+app.get("/db-test", async (req, res) => {
+  try {
+    const result = await mongoose.connection.db.admin().ping();
+    res.json({
+      success: true,
+      message: "MongoDB is connected and responding",
+      result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "MongoDB is NOT responding",
+      error: error.message
+    });
+  }
+});
+// =======================
+// END OF DB TEST ROUTE 
+// =======================
+
+
 // SESSION BOOTSTRAP
 app.get('/api/session', (req, res) => {
   if (!req.session.userId) {
