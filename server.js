@@ -58,9 +58,19 @@ app.use(session({
   }
 }));
 
+console.log("MONGODB_URI:", process.env.MONGODB_URI);
+console.log("SESSION_SECRET:", process.env.SESSION_SECRET);
+
+
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("MongoDB connected"))
   .catch(err => console.error("MongoDB connection error:", err));
+  
+  if (!process.env.MONGODB_URI) {
+  throw new Error("MONGODB_URI is missing in .env");
+}
+
+mongoose.connect(process.env.MONGODB_URI)
 
 // =======================
 // ROUTES
