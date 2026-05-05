@@ -1,9 +1,9 @@
-const checkoutNodeJssdk = require('@paypal/checkout-server-sdk');
+const checkoutNodeJssdk = require("@paypal/checkout-server-sdk");
 
 function environment() {
   return new checkoutNodeJssdk.core.LiveEnvironment(
-    process.env.xxxx,
-    process.env.yyy
+    process.env.PAYPAL_CLIENT_ID,
+    process.env.PAYPAL_CLIENT_SECRET
   );
 }
 

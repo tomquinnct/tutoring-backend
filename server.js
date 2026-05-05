@@ -1,6 +1,9 @@
  // =======================
 // IMPORTS
 // =======================
+
+require("dotenv").config(); // 👈 MUST be first
+
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -12,7 +15,13 @@ const Session = require('./models/Session');
 
 const app = express();
 
+// ===========================================
+console.log("client type:", typeof client);
+console.log("client():", client?.());
+// ===========================================
+
 const { client } = require('./paypalClient');
+
 const checkoutNodeJssdk = require('@paypal/checkout-server-sdk');
 
 async function verifyPayPalOrder(orderId) {
@@ -61,6 +70,8 @@ mongoose.connect(process.env.MONGODB_URI)
 // =======================
 // ROUTES
 // =======================
+
+console.log("CREATE ORDER HIT");
 
 app.get('/', (req, res) => {
   res.send('Server is running');
@@ -189,10 +200,17 @@ app.post('/api/paypal/create-order', async (req, res) => {
       ]
     });
 
-    const order = await client().execute(request);
+       console.log("CREATE ORDER HIT");
+       console.log("session:", req.session?.userId);
+       console.log("body:", req.body);
+       console.log("package:", packageId, selectedPackage);
 
-    res.json({ orderId: order.result.id });
+       const order = await client().execute(request);
 
+       console.log("PAYPAL RESPONSE:", order);
+
+       return res.json({ id: order.result.id });
+    
   } catch (err) {
     console.error("CREATE ORDER ERROR:", err);
     res.status(500).json({ error: "Could not create PayPal order" });
