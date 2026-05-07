@@ -2,12 +2,14 @@
 // IMPORTS
 // =======================
 
+require("dotenv").config(); // 👈 MUST be first
+
+if (!process.env.MONGO_URI) {
+  throw new Error("MONGO_URI is missing");
+}
 
 console.log("🔥 SERVER FILE IS RUNNING");
-console.log("ENV TEST:", process.env.MONGODB_URI);
-
-
-require("dotenv").config(); // 👈 MUST be first
+console.log("ENV TEST:", process.env.MONGO_URI);
 
 const express = require('express');
 const mongoose = require('mongoose');
@@ -63,20 +65,20 @@ app.use(session({
   }
 }));
 
-console.log("MONGODB_URI:", process.env.MONGODB_URI);
-console.log("SESSION_SECRET:", process.env.SESSION_SECRET);
+// =======================
+// console.log("MONGO_URI:", process.env.MONGO_URI);
+// console.log("SESSION_SECRET:", process.env.SESSION_SECRET);
+// =======================
 
-
-mongoose.connect(process.env.MONGODB_URI)
-  .then(() => console.log("MongoDB connected"))
-  .catch(err => console.error("MongoDB connection error:", err));
-  
-  if (!process.env.MONGODB_URI) {
-  throw new Error("MONGODB_URI is missing in .env");
+ if (!process.env.MONGO_URI) {
+  throw new Error("MONGO_URI is missing in .env");
 }
 
-mongoose.connect(process.env.MONGODB_URI)
-
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("Mongo connected"))
+  .catch(err => console.error("Mongo connection error:", err));
+  
+ 
 // =======================
 // ROUTES
 // =======================
@@ -253,7 +255,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     if (result.status !== "COMPLETED") {
       return res.status(400).json({ error: "Payment not completed" });
     }
-
+    
     const purchaseUnit = result.purchase_units?.[0];
     const capturedPayment = purchaseUnit?.payments?.captures?.[0];
 
