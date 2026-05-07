@@ -20,6 +20,7 @@ const axios = require('axios');
 const Payment = require('./models/Payment');
 const Session = require('./models/Session');
 const MongoStore = require('connect-mongo');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 
@@ -27,21 +28,10 @@ const { client } = require('./paypalClient');
 
 const checkoutNodeJssdk = require('@paypal/checkout-server-sdk');
 
-async function verifyPayPalOrder(orderId) {
-
-const request = new checkoutNodeJssdk.orders.OrdersGetRequest(orderId);
-
-const response = await client().execute(request);
-
-  return response.result;
-}
-
-
 // =======================
 // MIDDLEWARE
 // =======================
 app.use(express.json());
-app.set('trust proxy', 1);
 
 app.use(cors({
   origin: [
@@ -81,10 +71,62 @@ app.use(session({
   throw new Error("MONGO_URI is missing in .env");
 }
 
+if (!process.env.SESSION_SECRET) {
+  throw new Error("SESSION_SECRET is missing");
+}
+
+// =========================
+// Create a limiter (Global)
+// =========================
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+
+  max: 100, // limit each IP to 100 requests per window
+
+  message: {
+    error: "Too many requests. Please try again later."
+  },
+
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+   app.use(limiter);
+   
+// ===========================
+// Create a limiter (Payments)
+// ===========================
+const paymentLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: {
+    error: "Too many payment attempts"
+  }
+});
+
+app.use('/api/paypal', paymentLimiter);
+
+
+// =======================
+// SPIN UP MONGO 
+// =======================
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("Mongo connected"))
-  .catch(err => console.error("Mongo connection error:", err));
-  
+  .then(() => {
+
+    console.log("Mongo connected");
+
+    const PORT = process.env.PORT || 3000;
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+    });
+
+  })
+  .catch(err => {
+    console.error("Mongo connection error:", err);
+    process.exit(1);
+  });
  
 // =======================
 // ROUTES
@@ -145,15 +187,6 @@ app.get('/sessions', async (req, res) => {
 
     const userId = req.session.userId;
 
-// =======================
-// Store users in DB:
-// =======================
-
-    User {
-      userId,
-      createdAt
-    }    
-
     let record = await Session.findOne({ userId });
 
     if (!record) {
@@ -173,7 +206,7 @@ app.get('/sessions', async (req, res) => {
 
 
 // =======================
-// CREATE PACHAGES 
+// CREATE PACKAGES 
 // =======================
 
 const PACKAGES = {
@@ -279,7 +312,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     const result = capture.result;
 
     // =======================
-    // VERIFY PAYMENT STATUS
+    // VERIFY PAYPAL RESPONSE
     // =======================
 
     if (!result || result.status !== "COMPLETED") {
@@ -294,47 +327,40 @@ app.post('/api/paypal/capture-order', async (req, res) => {
 
     const purchaseUnit = result.purchase_units?.[0];
 
+    if (!purchaseUnit) {
+      return res.status(400).json({
+        error: "Missing purchase unit"
+      });
+    }
+
     const capturedPayment =
-      purchaseUnit?.payments?.captures?.[0];
+      purchaseUnit.payments?.captures?.[0];
 
-    const paypalUserId =
-      purchaseUnit?.custom_id;
-
-    const amount =
-      capturedPayment?.amount?.value;
-
-    const captureId =
-      capturedPayment?.id;
+    if (!capturedPayment) {
+      return res.status(400).json({
+        error: "Missing capture details"
+      });
+    }
 
     // =======================
-    // VALIDATE PAYPAL DATA
+    // PAYPAL SOURCE OF TRUTH
     // =======================
+
+    const paypalUserId = purchaseUnit.custom_id;
 
     if (!paypalUserId) {
       return res.status(400).json({
-        error: "Missing PayPal user ID"
-      });
-    }
-
-    if (!captureId) {
-      return res.status(400).json({
-        error: "Missing PayPal capture ID"
-      });
-    }
-
-    if (!amount) {
-      return res.status(400).json({
-        error: "Missing payment amount"
+        error: "Missing PayPal custom_id"
       });
     }
 
     // =======================
-    // SESSION FALLBACK LOGIC
+    // SESSION FALLBACK
     // =======================
 
     const sessionUserId = req.session?.userId;
 
-    // If session exists, it MUST match PayPal
+    // If session exists, verify it matches PayPal
     if (
       sessionUserId &&
       sessionUserId !== paypalUserId
@@ -344,23 +370,33 @@ app.post('/api/paypal/capture-order', async (req, res) => {
       });
     }
 
-    // ================================= 
-    // Trust PayPal as source of truth
-    // ================================= 
-    const userId = paypalUserId;
+    // Use session if available, otherwise PayPal
+    const userId = sessionUserId || paypalUserId;
 
+    // =======================
+    // PAYMENT DETAILS
+    // =======================
+
+    const amount = capturedPayment.amount?.value;
+
+    const captureId = capturedPayment.id;
+
+    if (!amount || !captureId) {
+      return res.status(400).json({
+        error: "Invalid PayPal payment data"
+      });
+    }
 
     // =======================
     // DUPLICATE PAYMENT CHECK
     // =======================
 
-    const existingPayment =
-      await Payment.findOne({
-        $or: [
-          { paypalOrderId: orderId },
-          { paypalCaptureId: captureId }
-        ]
-      });
+    const existingPayment = await Payment.findOne({
+      $or: [
+        { paypalOrderId: orderId },
+        { paypalCaptureId: captureId }
+      ]
+    });
 
     if (existingPayment) {
 
@@ -398,7 +434,7 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     }
 
     // =======================
-    // SAVE PAYMENT RECORD
+    // STORE PAYMENT RECORD
     // =======================
 
     await Payment.create({
@@ -450,11 +486,3 @@ app.post('/api/paypal/capture-order', async (req, res) => {
     });
   }
 });
-
-
-// =======================
-// START SERVER
-// =======================
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
