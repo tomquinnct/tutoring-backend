@@ -53,10 +53,13 @@ app.use(cors({
   allowedHeaders: ["Content-Type"]
 }));
 
+app.set('trust proxy', 1);
+
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   cookie: {
     secure: true,
     httpOnly: true,
@@ -112,8 +115,10 @@ app.get("/db-test", async (req, res) => {
 // END OF DB TEST ROUTE 
 // =======================
 
-
+// =======================
 // SESSION BOOTSTRAP
+// =======================
+
 app.get('/api/session', (req, res) => {
   if (!req.session.userId) {
     req.session.userId = crypto.randomUUID();
@@ -121,7 +126,10 @@ app.get('/api/session', (req, res) => {
   res.json({ success: true });
 });
 
+// =======================
 // GET SESSIONS (SECURE)
+// =======================
+
 app.get('/sessions', async (req, res) => {
   try {
 
@@ -186,6 +194,10 @@ app.post('/api/paypal/create-order', async (req, res) => {
     if (!req.session.userId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
+    
+    if (purchaseUnit?.custom_id !== req.session.userId) {
+       return res.status(400).json({ error: "Session mismatch" });
+    }
 
     const { packageId } = req.body;
     const selectedPackage = PACKAGES[packageId];
@@ -220,6 +232,14 @@ app.post('/api/paypal/create-order', async (req, res) => {
        const order = await client().execute(request);
 
        console.log("PAYPAL RESPONSE:", order);
+       
+       if (purchaseUnit?.custom_id !== req.session.userId) {
+          return res.status(400).json({ error: "Session mismatch" });
+       }
+       
+       if (!result || result.status !== "COMPLETED") {
+          return res.status(400).json({ error: "Invalid PayPal payment" });
+       }
 
        return res.json({ id: order.result.id });
     
