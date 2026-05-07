@@ -97,13 +97,13 @@ app.get("/db-test", async (req, res) => {
     const result = await mongoose.connection.db.admin().ping();
     res.json({
       success: true,
-      message: "MongoDB is connected and responding",
+      message: "Mongo is connected and responding",
       result
     });
   } catch (error) {
     res.status(500).json({
       success: false,
-      message: "MongoDB is NOT responding",
+      message: "Mongo is NOT responding",
       error: error.message
     });
   }
