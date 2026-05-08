@@ -356,6 +356,11 @@ app.get('/sessions', requireAuth, async (req, res) => {
 // =======================
 // START SERVER
 // =======================
+
+console.log("CLIENT ID EXISTS:", !!process.env.PAYPAL_CLIENT_ID);
+console.log("PAYPAL SECRET EXISTS:", !!process.env.PAYPAL_SECRET);
+console.log("SESSION SECRET EXISTS:", !!process.env.SESSION_SECRET);
+
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
