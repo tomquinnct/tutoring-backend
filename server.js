@@ -16,6 +16,23 @@ const Payment = require('./models/Payment');
 const SessionModel = require('./models/Session');
 
 // =======================
+// TEST ONLY
+// =======================
+process.on('uncaughtException', (err) => {
+  console.error('🔥 UNCAUGHT EXCEPTION:', err);
+});
+
+process.on('unhandledRejection', (err) => {
+  console.error('🔥 UNHANDLED REJECTION:', err);
+});
+console.log("MONGO:", process.env.MONGODB_URI ? "exists" : "MISSING");
+console.log("SESSION:", process.env.SESSION_SECRET ? "exists" : "MISSING");
+// =======================
+// =======================
+
+
+
+// =======================
 // EXPRESS APP
 // =======================
 const app = express();
