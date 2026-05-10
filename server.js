@@ -123,7 +123,10 @@ async function generateAccessToken() {
     },
     data: 'grant_type=client_credentials'
   });
-
+  
+console.log("PAYPAL_CLIENT_ID:", process.env.PAYPAL_CLIENT_ID);
+console.log("PAYPAL_SECRET EXISTS:", !!process.env.PAYPAL_CLIENT_SECRET);
+  
   return response.data.access_token;
 }
 
@@ -205,9 +208,6 @@ app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
   }
 
 });
-
-
-
 
 // =======================
 // CAPTURE PAYPAL ORDER
