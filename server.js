@@ -109,7 +109,7 @@ function requireAuth(req, res, next) {
 async function generateAccessToken() {
 
   const auth = Buffer.from(
-    `${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_SECRET}`
+    `${process.env.PAYPAL_CLIENT_ID}:${process.env.PAYPAL_CLIENT_SECRET}`
   ).toString('base64');
 
   const response = await axios({
@@ -186,6 +186,7 @@ app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
           }
         ]
       }
+
     });
 
     console.log('PAYPAL ORDER CREATED:', response.data.id);
@@ -202,9 +203,10 @@ app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
       error: 'Failed to create PayPal order'
     });
   }
+
 });
 
-console.log("ACCESS TOKEN START:", accessToken?.slice(0, 20));
+
 
 
 // =======================
@@ -309,6 +311,8 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
       error: 'Payment capture failed'
     });
   }
+          console.log("ACCESS TOKEN START:", accessToken?.slice(0, 20));
+
 });
 
 // =======================
