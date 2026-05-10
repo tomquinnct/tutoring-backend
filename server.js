@@ -1,4 +1,4 @@
-// =======================
+ // =======================
 // IMPORTS
 // =======================
 require('dotenv').config();
@@ -8,16 +8,15 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const crypto = require('crypto');
 const session = require('express-session');
-
 const MongoStore = require('connect-mongo').default;
 const axios = require('axios');
 
-// YOUR MODELS
+// MODELS
 const Payment = require('./models/Payment');
 const SessionModel = require('./models/Session');
 
 // =======================
-// TEST ONLY
+// PROCESS ERROR HANDLERS
 // =======================
 process.on('uncaughtException', (err) => {
   console.error('🔥 UNCAUGHT EXCEPTION:', err);
@@ -26,21 +25,12 @@ process.on('uncaughtException', (err) => {
 process.on('unhandledRejection', (err) => {
   console.error('🔥 UNHANDLED REJECTION:', err);
 });
-console.log("MONGO:", process.env.MONGODB_URI ? "exists" : "MISSING");
-console.log("SESSION:", process.env.SESSION_SECRET ? "exists" : "MISSING");
-// =======================
-// =======================
-
-
 
 // =======================
 // EXPRESS APP
 // =======================
 const app = express();
 
-// =======================
-// TRUST PROXY (IMPORTANT FOR RENDER)
-// =======================
 app.set('trust proxy', 1);
 
 // =======================
@@ -48,9 +38,6 @@ app.set('trust proxy', 1);
 // =======================
 app.use(express.json());
 
-// =======================
-// CORS
-// =======================
 app.use(cors({
   origin: [
     'https://quinnmathtutor.com',
@@ -60,6 +47,30 @@ app.use(cors({
 }));
 
 // =======================
+// SESSION MIDDLEWARE (CRITICAL FIX)
+// MUST BE BEFORE ROUTES
+// =======================
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGO_URI
+  }),
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: 'none'
+  }
+}));
+
+// =======================
+// DEBUG ENV
+// =======================
+console.log("MONGO:", process.env.MONGO_URI ? "exists" : "MISSING");
+console.log("SESSION:", process.env.SESSION_SECRET ? "exists" : "MISSING");
+
+// =======================
 // ROOT ROUTE
 // =======================
 app.get('/', (req, res) => {
@@ -67,15 +78,12 @@ app.get('/', (req, res) => {
 });
 
 // =======================
-// SESSION BOOTSTRAP ROUTE
+// SESSION ROUTE (FIXED)
 // =======================
 app.get('/api/session', (req, res) => {
 
-  // FIXED:
-  // Stable identity tied to session cookie
-  // (NOT random UUID)
   if (!req.session.userId) {
-    req.session.userId = req.session.id;
+    req.session.userId = crypto.randomUUID();
   }
 
   console.log('SESSION INITIALIZED:', req.session.userId);
@@ -91,13 +99,8 @@ app.get('/api/session', (req, res) => {
 // =======================
 function requireAuth(req, res, next) {
 
-  console.log('SESSION:', req.session);
-  console.log('USER ID:', req.session?.userId);
-
   if (!req.session || !req.session.userId) {
-    return res.status(401).json({
-      error: 'Unauthorized'
-    });
+    return res.status(401).json({ error: 'Unauthorized' });
   }
 
   next();
@@ -123,50 +126,32 @@ async function generateAccessToken() {
     },
     data: 'grant_type=client_credentials'
   });
-  
-console.log("PAYPAL_CLIENT_ID:", process.env.PAYPAL_CLIENT_ID);
-console.log("PAYPAL_SECRET EXISTS:", !!process.env.PAYPAL_CLIENT_SECRET);
-  
+
   return response.data.access_token;
 }
 
 // =======================
-// PACKAGE CONFIG
+// PACKAGES
 // =======================
 const packages = {
-  test: {
-    value: '2.00',
-    sessions: 2
-  },
-  two: {
-    value: '75.00',
-    sessions: 2
-  },
-  ten: {
-    value: '350.00',
-    sessions: 10
-  },
-  twenty: {
-    value: '650.00',
-    sessions: 20
-  }
+  test: { value: '2.00', sessions: 2 },
+  two: { value: '75.00', sessions: 2 },
+  ten: { value: '350.00', sessions: 10 },
+  twenty: { value: '650.00', sessions: 20 }
 };
 
 // =======================
-// CREATE PAYPAL ORDER
+// CREATE ORDER
 // =======================
 app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
 
   try {
 
     const { packageId } = req.body;
-
     const selectedPackage = packages[packageId];
 
     if (!selectedPackage) {
-      return res.status(400).json({
-        error: 'Invalid package selected'
-      });
+      return res.status(400).json({ error: 'Invalid package selected' });
     }
 
     const accessToken = await generateAccessToken();
@@ -189,28 +174,23 @@ app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
           }
         ]
       }
-
     });
 
     console.log('PAYPAL ORDER CREATED:', response.data.id);
 
-    res.json({
-      orderId: response.data.id
-    });
+    res.json({ orderId: response.data.id });
 
   } catch (err) {
-
     console.error('CREATE ORDER ERROR:', err.response?.data || err.message);
 
     res.status(500).json({
       error: 'Failed to create PayPal order'
     });
   }
-
 });
 
 // =======================
-// CAPTURE PAYPAL ORDER
+// CAPTURE ORDER
 // =======================
 app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
 
@@ -218,17 +198,9 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
 
     const { orderId } = req.body;
 
-    // =======================
-    // DUPLICATE PAYMENT PROTECTION
-    // =======================
-    const existingPayment = await Payment.findOne({
-      orderId
-    });
+    const existingPayment = await Payment.findOne({ orderId });
 
     if (existingPayment) {
-
-      console.log('Duplicate payment prevented:', orderId);
-
       return res.json({
         success: true,
         duplicate: true,
@@ -236,9 +208,6 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
       });
     }
 
-    // =======================
-    // PAYPAL CAPTURE
-    // =======================
     const accessToken = await generateAccessToken();
 
     const response = await axios({
@@ -254,11 +223,8 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
 
     console.log('CAPTURE SUCCESS:', captureData.id);
 
-    // =======================
-    // DETERMINE PACKAGE VALUE
-    // =======================
-    const amountPaid = captureData.purchase_units[0].payments
-      .captures[0].amount.value;
+    const amountPaid =
+      captureData.purchase_units[0].payments.captures[0].amount.value;
 
     let sessionsToAdd = 0;
 
@@ -267,9 +233,6 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
     if (amountPaid === '350.00') sessionsToAdd = 10;
     if (amountPaid === '650.00') sessionsToAdd = 20;
 
-    // =======================
-    // SAVE PAYMENT RECORD
-    // =======================
     await Payment.create({
       userId: req.session.userId,
       orderId,
@@ -278,9 +241,6 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
       paypalData: captureData
     });
 
-    // =======================
-    // UPDATE USER SESSION COUNT
-    // =======================
     let sessionRecord = await SessionModel.findOne({
       userId: req.session.userId
     });
@@ -296,27 +256,22 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
 
     await sessionRecord.save();
 
-    console.log('Sessions updated:', sessionRecord.sessions);
-
     res.json({
       success: true,
       sessions: sessionRecord.sessions
     });
 
   } catch (err) {
-
     console.error('CAPTURE ERROR:', err.response?.data || err.message);
 
     res.status(500).json({
       error: 'Payment capture failed'
     });
   }
-          console.log("ACCESS TOKEN START:", accessToken?.slice(0, 20));
-
 });
 
 // =======================
-// GET REMAINING SESSIONS
+// GET SESSIONS
 // =======================
 app.get('/sessions', requireAuth, async (req, res) => {
 
@@ -327,9 +282,7 @@ app.get('/sessions', requireAuth, async (req, res) => {
     });
 
     if (!sessionRecord) {
-      sessionRecord = {
-        sessions: 0
-      };
+      sessionRecord = { sessions: 0 };
     }
 
     res.json({
@@ -337,7 +290,6 @@ app.get('/sessions', requireAuth, async (req, res) => {
     });
 
   } catch (err) {
-
     console.error('SESSION FETCH ERROR:', err);
 
     res.status(500).json({
@@ -347,42 +299,17 @@ app.get('/sessions', requireAuth, async (req, res) => {
 });
 
 // =======================
-// MONGODB + SERVER START
+// DATABASE CONNECTION
 // =======================
-
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("MongoDB connected");
-  })
-  .catch(err => {
-    console.error("MongoDB connection error:", err);
-  });
-  
-// =======================
-// SESSION STORE (SAFE PLACE)
-// =======================
-
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGO_URI
-  }),
-  cookie: {
-    secure: true,
-    httpOnly: true,
-    sameSite: 'none'
-  }
-}));
+  .then(() => console.log("MongoDB connected"))
+  .catch(err => console.error("MongoDB connection error:", err));
 
 // =======================
-// START SERVER (CRITICAL)
+// START SERVER
 // =======================
-    
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
   console.log("🚀 Server running on port", PORT);
 });
-  
