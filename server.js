@@ -204,6 +204,9 @@ app.post('/api/paypal/create-order', requireAuth, async (req, res) => {
   }
 });
 
+console.log("ACCESS TOKEN START:", accessToken?.slice(0, 20));
+
+
 // =======================
 // CAPTURE PAYPAL ORDER
 // =======================
