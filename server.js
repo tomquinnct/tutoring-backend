@@ -8,7 +8,8 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const crypto = require('crypto');
 const session = require('express-session');
-const MongoStore = require('connect-mongo');
+
+const MongoStore = require('connect-mongo').default;
 const axios = require('axios');
 
 // YOUR MODELS
