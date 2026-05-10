@@ -59,38 +59,6 @@ app.use(cors({
 }));
 
 // =======================
-// MONGODB CONNECTION
-// =======================
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('✅ MongoDB connected');
-  })
-  .catch((err) => {
-    console.error('❌ MongoDB connection error:', err);
-  });
-
-// =======================
-// SESSION MIDDLEWARE
-// =======================
-app.use(session({
-  secret: process.env.SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  proxy: true,
-
-  store: MongoStore.create({
-    mongoUrl: process.env.MONGO_URI
-  }),
-
-  cookie: {
-    secure: true,
-    httpOnly: true,
-    sameSite: 'none',
-    maxAge: 1000 * 60 * 60 * 24 * 30
-  }
-}));
-
-// =======================
 // ROOT ROUTE
 // =======================
 app.get('/', (req, res) => {
@@ -371,15 +339,42 @@ app.get('/sessions', requireAuth, async (req, res) => {
 });
 
 // =======================
-// START SERVER
+// MONGODB + SERVER START
 // =======================
 
-console.log("CLIENT ID EXISTS:", !!process.env.PAYPAL_CLIENT_ID);
-console.log("PAYPAL SECRET EXISTS:", !!process.env.PAYPAL_SECRET);
-console.log("SESSION SECRET EXISTS:", !!process.env.SESSION_SECRET);
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => {
+    console.log("MongoDB connected");
 
-const PORT = process.env.PORT || 3000;
+    // =======================
+    // SESSION STORE (SAFE PLACE)
+    // =======================
+    app.use(session({
+      secret: process.env.SESSION_SECRET,
+      resave: false,
+      saveUninitialized: false,
+      store: MongoStore.create({
+        mongoUrl: process.env.MONGO_URI
+      }),
+      cookie: {
+        secure: true,
+        httpOnly: true,
+        sameSite: 'none'
+      }
+    }));
 
-app.listen(PORT, () => {
-  console.log(`🔥 Server running on port ${PORT}`);
-});
+    // =======================
+    // START SERVER (CRITICAL)
+    // =======================
+    const PORT = process.env.PORT || 3000;
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+
+  })
+  .catch((err) => {
+    console.error("❌ MongoDB connection error:", err);
+  });
+  
+  
