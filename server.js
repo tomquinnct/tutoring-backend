@@ -346,36 +346,36 @@ app.get('/sessions', requireAuth, async (req, res) => {
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log("MongoDB connected");
-
-    // =======================
-    // SESSION STORE (SAFE PLACE)
-    // =======================
-    app.use(session({
-      secret: process.env.SESSION_SECRET,
-      resave: false,
-      saveUninitialized: false,
-      store: MongoStore.create({
-        mongoUrl: process.env.MONGO_URI
-      }),
-      cookie: {
-        secure: true,
-        httpOnly: true,
-        sameSite: 'none'
-      }
-    }));
-
-    // =======================
-    // START SERVER (CRITICAL)
-    // =======================
-    const PORT = process.env.PORT || 3000;
-
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
-
   })
-  .catch((err) => {
-    console.error("❌ MongoDB connection error:", err);
+  .catch(err => {
+    console.error("MongoDB connection error:", err);
   });
   
+// =======================
+// SESSION STORE (SAFE PLACE)
+// =======================
+
+app.use(session({
+  secret: process.env.SESSION_SECRET,
+  resave: false,
+  saveUninitialized: false,
+  store: MongoStore.create({
+    mongoUrl: process.env.MONGO_URI
+  }),
+  cookie: {
+    secure: true,
+    httpOnly: true,
+    sameSite: 'none'
+  }
+}));
+
+// =======================
+// START SERVER (CRITICAL)
+// =======================
+    
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log("🚀 Server running on port", PORT);
+});
   
