@@ -261,13 +261,17 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
       sessions: sessionRecord.sessions
     });
 
-  } catch (err) {
-    console.error('CAPTURE ERROR:', err.response?.data || err.message);
+} catch (err) {
 
-    res.status(500).json({
-      error: 'Payment capture failed'
+  console.error("🔥 PAYPAL CREATE ORDER FAILED FULL ERROR:");
+  console.error("STATUS:", err.response?.status);
+  console.error("DATA:", err.response?.data);
+  console.error("MESSAGE:", err.message);
+
+  return res.status(500).json({
+    error: err.response?.data || err.message
     });
-  }
+  } 
 });
 
 // =======================
