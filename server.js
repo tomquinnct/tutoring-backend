@@ -80,17 +80,20 @@ app.get('/', (req, res) => {
 // =======================
 // SESSION ROUTE (FIXED)
 // =======================
+
 app.get('/api/session', (req, res) => {
 
   if (!req.session.userId) {
     req.session.userId = crypto.randomUUID();
   }
 
-  console.log('SESSION INITIALIZED:', req.session.userId);
+  req.session.save(() => {
+    console.log('SESSION INITIALIZED:', req.session.userId);
 
-  res.json({
-    success: true,
-    userId: req.session.userId
+    res.json({
+      success: true,
+      userId: req.session.userId
+    });
   });
 });
 
@@ -258,10 +261,14 @@ await Payment.create({
 
     await sessionRecord.save();
 
-    res.json({
-      success: true,
-      sessions: sessionRecord.sessions
-    });
+  req.session.save(() => {
+   res.json({
+    success: true,
+    sessions: sessionRecord.sessions,
+    sessionsAdded: sessionsToAdd,
+    status: captureData.status
+   });
+ });  
 
 } catch (err) {
 
@@ -307,15 +314,20 @@ app.get('/sessions', requireAuth, async (req, res) => {
 // =======================
 // DATABASE CONNECTION
 // =======================
+
 mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("MongoDB connected"))
+  .then(() => {
+
+    console.log("MongoDB connected");
+    // =======================
+    // START SERVER
+    // =======================
+    const PORT = process.env.PORT || 3000;
+     
+    app.listen(PORT, () => {
+      console.log("🚀 Server running on port", PORT);
+    });
+
+  })
   .catch(err => console.error("MongoDB connection error:", err));
-
-// =======================
-// START SERVER
-// =======================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-  console.log("🚀 Server running on port", PORT);
-});
+  
