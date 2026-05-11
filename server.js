@@ -229,12 +229,17 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
     const amountPaid =
       captureData.purchase_units[0].payments.captures[0].amount.value;
 
+    const amountNumber = Number(amountPaid);
+
     let sessionsToAdd = 0;
 
-    if (amountPaid === '2.00') sessionsToAdd = 2;
-    if (amountPaid === '75.00') sessionsToAdd = 2;
-    if (amountPaid === '350.00') sessionsToAdd = 10;
-    if (amountPaid === '650.00') sessionsToAdd = 20;
+    if (amountNumber === 2) sessionsToAdd = 2;
+    if (amountNumber === 75) sessionsToAdd = 2;
+    if (amountNumber === 350) sessionsToAdd = 10;
+    if (amountNumber === 650) sessionsToAdd = 20;
+
+    console.log("AMOUNT PAID:", amountPaid);
+    console.log("SESSIONS TO ADD:", sessionsToAdd);
 
 await Payment.create({
   userId: req.session.userId,
