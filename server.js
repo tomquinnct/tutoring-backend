@@ -233,13 +233,15 @@ app.post('/api/paypal/capture-order', requireAuth, async (req, res) => {
     if (amountPaid === '350.00') sessionsToAdd = 10;
     if (amountPaid === '650.00') sessionsToAdd = 20;
 
-    await Payment.create({
-      userId: req.session.userId,
-      orderId,
-      amount: amountPaid,
-      sessionsAdded: sessionsToAdd,
-      paypalData: captureData
-    });
+await Payment.create({
+  userId: req.session.userId,
+  paypalOrderId: orderId,
+  paypalCaptureId: captureData.id,
+  status: captureData.status,
+  amount: amountPaid,
+  sessionsAdded: sessionsToAdd,
+  paypalData: captureData
+});
 
     let sessionRecord = await SessionModel.findOne({
       userId: req.session.userId
