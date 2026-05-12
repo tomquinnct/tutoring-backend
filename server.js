@@ -309,11 +309,20 @@ app.get('/sessions', requireAuth, async (req, res) => {
     });
 
     if (!sessionRecord) {
-      sessionRecord = { sessions: 0 };
+      sessionRecord = {
+        userId: req.session.userId,
+        sessions: 0
+      };
     }
 
     res.json({
       sessions: sessionRecord.sessions
+    });
+    
+    console.log('SESSION FETCH GOOD', {
+    userId: req.session.userId,
+    found: sessionRecord,
+    sessions: sessionRecord?.sessions
     });
 
   } catch (err) {
@@ -345,11 +354,7 @@ mongoose.connect(process.env.MONGO_URI)
   })
   .catch(err => console.error("MongoDB connection error:", err));
   
-  let sessionRecord = await SessionModel.findOne({
-  userId: req.session.userId
-});
-
-console.log("FOUND SESSION RECORD:", sessionRecord);
+  
 
 
 
