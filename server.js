@@ -50,17 +50,20 @@ app.use(cors({
 // SESSION MIDDLEWARE (CRITICAL FIX)
 // MUST BE BEFORE ROUTES
 // =======================
+
 app.use(session({
   secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
+  proxy: true,
   store: MongoStore.create({
     mongoUrl: process.env.MONGO_URI
   }),
   cookie: {
     secure: true,
     httpOnly: true,
-    sameSite: 'none'
+    sameSite: 'none',
+    maxAge: 1000 * 60 * 60 * 24 * 30
   }
 }));
 
@@ -264,7 +267,11 @@ await Payment.create({
 
     sessionRecord.sessions += sessionsToAdd;
 
+    console.log("BEFORE SAVE:", sessionRecord);
+
     await sessionRecord.save();
+    
+    console.log("AFTER SAVE:", sessionRecord);
 
   req.session.save(() => {
    res.json({
@@ -294,6 +301,8 @@ await Payment.create({
 app.get('/sessions', requireAuth, async (req, res) => {
 
   try {
+
+    console.log("SESSION USER:", req.session.userId);
 
     let sessionRecord = await SessionModel.findOne({
       userId: req.session.userId
@@ -335,4 +344,13 @@ mongoose.connect(process.env.MONGO_URI)
 
   })
   .catch(err => console.error("MongoDB connection error:", err));
+  
+  let sessionRecord = await SessionModel.findOne({
+  userId: req.session.userId
+});
+
+console.log("FOUND SESSION RECORD:", sessionRecord);
+
+
+
   
