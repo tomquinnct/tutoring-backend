@@ -101,6 +101,57 @@ app.get('/api/session', (req, res) => {
 });
 
 // =======================
+// PREPARE BOOKING
+// =======================
+app.post('/api/prepare-booking', requireAuth, async (req, res) => {
+
+  try {
+
+    // ATOMIC SESSION DEDUCTION
+    const updated = await SessionModel.findOneAndUpdate(
+      {
+        userId: req.session.userId,
+        sessions: { $gt: 0 }
+      },
+      {
+        $inc: { sessions: -1 }
+      },
+      {
+        new: true
+      }
+    );
+
+    // NO SESSIONS AVAILABLE
+    if (!updated) {
+      return res.status(403).json({
+        error: 'No sessions remaining'
+      });
+    }
+
+    console.log('BOOKING APPROVED:', {
+      userId: req.session.userId,
+      remainingSessions: updated.sessions
+    });
+
+    // REDIRECT TO CALENDLY
+    return res.json({
+      success: true,
+      sessionsRemaining: updated.sessions,
+      redirectUrl:
+        'https://calendly.com/mathtutor-tomquinn/30min'
+    });
+
+  } catch (err) {
+
+    console.error('PREPARE BOOKING ERROR:', err);
+
+    return res.status(500).json({
+      error: 'Failed to prepare booking'
+    });
+  }
+});
+
+// =======================
 // AUTH MIDDLEWARE
 // =======================
 function requireAuth(req, res, next) {
@@ -330,6 +381,54 @@ app.get('/sessions', requireAuth, async (req, res) => {
 
     res.status(500).json({
       error: 'Failed to load sessions'
+    });
+  }
+});
+
+// =======================
+// PREPARE BOOKING
+// =======================
+app.post('/api/prepare-booking', requireAuth, async (req, res) => {
+
+  try {
+
+    const updated = await SessionModel.findOneAndUpdate(
+      {
+        userId: req.session.userId,
+        sessions: { $gt: 0 }
+      },
+      {
+        $inc: { sessions: -1 }
+      },
+      {
+        new: true
+      }
+    );
+
+    if (!updated) {
+      return res.status(403).json({
+        error: 'No sessions remaining'
+      });
+    }
+
+    console.log('BOOKING APPROVED:', {
+      userId: req.session.userId,
+      remainingSessions: updated.sessions
+    });
+
+    return res.json({
+      success: true,
+      sessionsRemaining: updated.sessions,
+      redirectUrl:
+        'https://calendly.com/mathtutor-tomquinn/30min'
+    });
+
+  } catch (err) {
+
+    console.error('PREPARE BOOKING ERROR:', err);
+
+    return res.status(500).json({
+      error: 'Failed to prepare booking'
     });
   }
 });
