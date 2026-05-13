@@ -103,53 +103,52 @@ app.get('/api/session', (req, res) => {
 // =======================
 // PREPARE BOOKING
 // =======================
+
 app.post('/api/prepare-booking', requireAuth, async (req, res) => {
 
   try {
 
-    // ATOMIC SESSION DEDUCTION
-    const updated = await SessionModel.findOneAndUpdate(
-      {
-        userId: req.session.userId,
-        sessions: { $gt: 0 }
-      },
-      {
-        $inc: { sessions: -1 }
-      },
-      {
-        new: true
-      }
-    );
+    const sessionRecord = await SessionModel.findOne({
+      userId: req.session.userId
+    });
 
-    // NO SESSIONS AVAILABLE
-    if (!updated) {
-      return res.status(403).json({
-        error: 'No sessions remaining'
+    if (!sessionRecord) {
+      return res.status(404).json({ error: "No session record" });
+    }
+
+    // check available balance
+    const available = sessionRecord.sessions - sessionRecord.heldSessions;
+
+    if (available <= 0) {
+      return res.status(400).json({
+        error: "No available sessions to book"
       });
     }
 
-    console.log('BOOKING APPROVED:', {
-      userId: req.session.userId,
-      remainingSessions: updated.sessions
-    });
+    // OPTIONAL: prevent rapid double-click spam (short lock)
+    sessionRecord.bookingLock = {
+      active: true,
+      expiresAt: new Date(Date.now() + 60 * 1000) // 1 min lock
+    };
 
-    // REDIRECT TO CALENDLY
-    return res.json({
+    sessionRecord.heldSessions += 1;
+
+    await sessionRecord.save();
+
+    console.log("BOOKING HELD:", sessionRecord.userId);
+
+    res.json({
       success: true,
-      sessionsRemaining: updated.sessions,
-      redirectUrl:
-        'https://calendly.com/mathtutor-tomquinn/30min'
+      redirectUrl: "https://calendly.com/mathtutor-tomquinn/30min"
     });
 
   } catch (err) {
-
-    console.error('PREPARE BOOKING ERROR:', err);
-
-    return res.status(500).json({
-      error: 'Failed to prepare booking'
-    });
+    console.error(err);
+    res.status(500).json({ error: "Booking failed" });
   }
 });
+
+
 
 // =======================
 // AUTH MIDDLEWARE
@@ -349,47 +348,79 @@ await Payment.create({
 // =======================
 // GET SESSIONS
 // =======================
+
 app.get('/sessions', requireAuth, async (req, res) => {
 
   try {
 
-    console.log("SESSION USER:", req.session.userId);
+    const sessionRecord = await SessionModel.findOne({
+      userId: req.session.userId
+    });
 
-    let sessionRecord = await SessionModel.findOne({
+    const sessions = sessionRecord?.sessions ?? 0;
+    const held = sessionRecord?.heldSessions ?? 0;
+
+    res.json({
+      sessions,
+      heldSessions: held,
+      available: sessions - held
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      error: "Failed to load sessions"
+    });
+  }
+});
+
+// =======================
+// CONFIRM BOOKING (FINALIZE HELD SESSION)
+// =======================
+
+app.post('/api/confirm-booking', requireAuth, async (req, res) => {
+
+  try {
+
+    const sessionRecord = await SessionModel.findOne({
       userId: req.session.userId
     });
 
     if (!sessionRecord) {
-      sessionRecord = {
-        userId: req.session.userId,
-        sessions: 0
-      };
+      return res.status(404).json({ error: "Not found" });
     }
 
+    // remove held session
+    if (sessionRecord.heldSessions > 0) {
+      sessionRecord.heldSessions -= 1;
+      sessionRecord.sessions -= 1;
+    }
+
+    // clear lock
+    sessionRecord.bookingLock = {
+      active: false,
+      expiresAt: null
+    };
+
+    await sessionRecord.save();
+
+    console.log("BOOKING CONFIRMED:", sessionRecord.userId);
+
     res.json({
-      sessions: sessionRecord.sessions
-    });
-    
-    console.log('SESSION FETCH GOOD', {
-    userId: req.session.userId,
-    found: sessionRecord,
-    sessions: sessionRecord?.sessions
+      success: true,
+      remaining: sessionRecord.sessions - sessionRecord.heldSessions
     });
 
   } catch (err) {
-    console.error('SESSION FETCH ERROR:', err);
-
-    res.status(500).json({
-      error: 'Failed to load sessions'
-    });
+    console.error(err);
+    res.status(500).json({ error: "Confirm failed" });
   }
 });
 
 // =======================
 // PREPARE BOOKING
 // =======================
-app.post('/api/prepare-booking', requireAuth, async (req, res) => {
 
+app.post('/api/prepare-booking', requireAuth, async (req, res) => {
   try {
 
     const updated = await SessionModel.findOneAndUpdate(
@@ -400,38 +431,57 @@ app.post('/api/prepare-booking', requireAuth, async (req, res) => {
       {
         $inc: { sessions: -1 }
       },
-      {
-        new: true
-      }
+      { new: true }
     );
 
     if (!updated) {
       return res.status(403).json({
-        error: 'No sessions remaining'
+        error: "No sessions remaining"
       });
     }
-
-    console.log('BOOKING APPROVED:', {
-      userId: req.session.userId,
-      remainingSessions: updated.sessions
-    });
 
     return res.json({
       success: true,
       sessionsRemaining: updated.sessions,
-      redirectUrl:
-        'https://calendly.com/mathtutor-tomquinn/30min'
+      redirectUrl: "https://calendly.com/mathtutor-tomquinn/30min"
     });
 
   } catch (err) {
-
-    console.error('PREPARE BOOKING ERROR:', err);
-
-    return res.status(500).json({
-      error: 'Failed to prepare booking'
-    });
+    console.error(err);
+    res.status(500).json({ error: "Booking failed" });
   }
 });
+
+// =======================
+// CLEANUP TIMER (STEP 4)
+// =======================
+
+setInterval(async () => {
+  try {
+
+    const expiryTime = new Date(Date.now() - 10 * 60 * 1000);
+
+    const expired = await SessionModel.find({
+      heldSessions: { $gt: 0 },
+      updatedAt: { $lt: expiryTime }
+    });
+
+    for (const record of expired) {
+
+      record.sessions += record.heldSessions;
+      record.heldSessions = 0;
+
+      await record.save();
+
+      console.log("AUTO-REFUND SESSION:", record.userId);
+    }
+
+  } catch (err) {
+    console.error("CLEANUP ERROR:", err);
+  }
+
+}, 60 * 1000); // runs every 1 minute
+
 
 // =======================
 // DATABASE CONNECTION

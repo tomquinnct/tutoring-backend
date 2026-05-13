@@ -1,36 +1,29 @@
-// models/Payment.js
+ const mongoose = require('mongoose');
 
-const mongoose = require('mongoose');
-
-const paymentSchema = new mongoose.Schema({
+const sessionSchema = new mongoose.Schema({
   userId: {
     type: String,
-    required: true
-  },
-  paypalOrderId: {
-    type: String,
     required: true,
     unique: true
   },
-  paypalCaptureId: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  amount: {
-    type: String,
-    required: true
-  },
-  sessionsAdded: {
+
+  sessions: {
     type: Number,
-    required: true
+    default: 0
   },
-  status: {
-    type: String,
-    required: true
+
+  heldSessions: {
+    type: Number,
+    default: 0
+  },
+
+  bookingLock: {
+    active: {
+      type: Boolean,
+      default: false
+    },
+    expiresAt: Date
   }
-}, {
-  timestamps: true
 });
 
-module.exports = mongoose.model('Payment', paymentSchema);
+module.exports = mongoose.model('Session', sessionSchema);
